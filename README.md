@@ -1,10 +1,10 @@
-# VibroJaw — Web App (Flask / Community Edition Compatible)
+# VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition
 
 **Team:** ChocoChip Circuits | MedTech Hack 2025 | Health Monitoring Track
 
 ---
 
-## Setup (one time)
+## Setup
 
 ```bash
 # 1. Install Python 3.10+ if you haven't already
@@ -12,7 +12,6 @@
 
 pip install flask flask-socketio
 
-# That's it. No IntelliJ plugins needed.
 ```
 
 ---
