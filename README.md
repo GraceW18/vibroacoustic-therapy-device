@@ -1,4 +1,4 @@
-# VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition
+# VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition)
 
 **Team:** ChocoChip Circuits | MedTech Hack 2025 | Health Monitoring Track
 
