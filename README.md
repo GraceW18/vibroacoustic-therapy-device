@@ -5,7 +5,7 @@
 IP (discuss issues of current technologies + target audience)
 
 ## Relevant Background Research
-To be added (provide file path of research findings)
+Please refer to the Research.md file for information
 
 ## Our Solution
 IP (discuss features of our product)
