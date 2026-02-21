@@ -1,6 +1,38 @@
 # VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition)
 
-**Team:** ChocoChip Circuits | MedTech Hack 2025 | Health Monitoring Track
+**Team:** ChocoChip Circuits | MedTech Hack 2025-26 | Health Monitoring Track
+
+---
+
+---
+
+## Problem Statement
+IP (discuss issues of current technologies + target audience)
+
+---
+
+---
+
+## Relevant Background Research
+To be added (provide file path of research findings)
+
+---
+
+---
+
+## Our Solution
+IP (discuss features of our product)
+
+---
+
+---
+
+## Technologies Used
+- Hardware:
+- Backend:
+- Frontend:
+- Database:
+- Etc:
 
 ---
 
@@ -63,14 +95,28 @@ Then open **http://localhost:5000** in your browser.
 
 ---
 
-## Health Status Thresholds
+---
 
-| Status | Events per minute |
-|--------|-------------------|
-| 🟢 Calm | < 3 EPM |
-| 🟡 Elevated | 3–8 EPM |
-| 🔴 Concerning | > 8 EPM |
+## Team Members
+- Yadiel Narvaez Hernandez
+- Madhumitha Rangaraj
+- Reyna Torrado-Rivera
+- Grace Wang
+- Ka Yi Zheng
 
+---
+
+---
+
+## License
+To be configured
+
+---
+
+---
+## Acknowledgments
+- MedTech Hack Organizers
+- Georgia Tech
 ---
 
 ## File Structure
