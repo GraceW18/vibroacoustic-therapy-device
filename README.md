@@ -1,31 +1,14 @@
 # VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition)
-
 **Team:** ChocoChip Circuits | MedTech Hack 2025-26 | Health Monitoring Track
-
----
-
----
 
 ## Problem Statement
 IP (discuss issues of current technologies + target audience)
 
----
-
----
-
 ## Relevant Background Research
 To be added (provide file path of research findings)
 
----
-
----
-
 ## Our Solution
 IP (discuss features of our product)
-
----
-
----
 
 ## Technologies Used
 - Hardware:
@@ -33,8 +16,6 @@ IP (discuss features of our product)
 - Frontend:
 - Database:
 - Etc:
-
----
 
 ## Setup
 
@@ -46,8 +27,6 @@ pip install flask flask-socketio
 
 ```
 
----
-
 ## Run the server
 
 ```bash
@@ -55,8 +34,6 @@ python app.py
 ```
 
 Then open **http://localhost:5000** in your browser.
-
----
 
 ## Pages
 
@@ -67,8 +44,6 @@ Then open **http://localhost:5000** in your browser.
 | `/about` | About the device & research |
 | `/api-docs` | Interactive REST API reference |
 
----
-
 ## Demo (no hardware needed)
 
 1. Open `/dashboard`
@@ -76,8 +51,6 @@ Then open **http://localhost:5000** in your browser.
 3. Click **▶ Start** — the chart and event table will update live via Socket.IO
 4. Adjust sliders and click **↑ Push Config to Device** — config saves instantly
 5. Click **■ Stop** to stop the simulator
-
----
 
 ## ESP32 Integration
 
@@ -93,10 +66,6 @@ Then open **http://localhost:5000** in your browser.
 4. Flash to ESP32 S3 — it connects to WiFi, starts monitoring,
    and data appears on the dashboard in real time.
 
----
-
----
-
 ## Team Members
 - Yadiel Narvaez Hernandez
 - Madhumitha Rangaraj
@@ -104,20 +73,12 @@ Then open **http://localhost:5000** in your browser.
 - Grace Wang
 - Ka Yi Zheng
 
----
-
----
-
 ## License
 To be configured
 
----
-
----
 ## Acknowledgments
 - MedTech Hack Organizers
 - Georgia Tech
----
 
 ## File Structure
 
