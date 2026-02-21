@@ -1,10 +1,23 @@
-# VibroJaw — Web App (Flask / Community Edition Compatible)
+# VibroJaw — Web App (Flask / IntelliJ IDEA Community Edition)
+**Team:** ChocoChip Circuits | MedTech Hack 2025-26 | Health Monitoring Track
 
-**Team:** ChocoChip Circuits | MedTech Hack 2025 | Health Monitoring Track
+## Problem Statement
+IP (discuss issues of current technologies + target audience)
 
----
+## Relevant Background Research
+Please refer to the Research.md file for information
 
-## Setup (one time)
+## Our Solution
+IP (discuss features of our product)
+
+## Technologies Used
+- Hardware:
+- Backend:
+- Frontend:
+- Database:
+- Etc:
+
+## Setup
 
 ```bash
 # 1. Install Python 3.10+ if you haven't already
@@ -12,10 +25,7 @@
 
 pip install flask flask-socketio
 
-# That's it. No IntelliJ plugins needed.
 ```
-
----
 
 ## Run the server
 
@@ -24,8 +34,6 @@ python app.py
 ```
 
 Then open **http://localhost:5000** in your browser.
-
----
 
 ## Pages
 
@@ -36,8 +44,6 @@ Then open **http://localhost:5000** in your browser.
 | `/about` | About the device & research |
 | `/api-docs` | Interactive REST API reference |
 
----
-
 ## Demo (no hardware needed)
 
 1. Open `/dashboard`
@@ -45,8 +51,6 @@ Then open **http://localhost:5000** in your browser.
 3. Click **▶ Start** — the chart and event table will update live via Socket.IO
 4. Adjust sliders and click **↑ Push Config to Device** — config saves instantly
 5. Click **■ Stop** to stop the simulator
-
----
 
 ## ESP32 Integration
 
@@ -62,17 +66,19 @@ Then open **http://localhost:5000** in your browser.
 4. Flash to ESP32 S3 — it connects to WiFi, starts monitoring,
    and data appears on the dashboard in real time.
 
----
+## Team Members
+- Yadiel Narvaez Hernandez
+- Madhumitha Rangaraj
+- Reyna Torrado-Rivera
+- Grace Wang
+- Ka Yi Zheng
 
-## Health Status Thresholds
+## License
+To be configured
 
-| Status | Events per minute |
-|--------|-------------------|
-| 🟢 Calm | < 3 EPM |
-| 🟡 Elevated | 3–8 EPM |
-| 🔴 Concerning | > 8 EPM |
-
----
+## Acknowledgments
+- MedTech Hack Organizers
+- Georgia Tech
 
 ## File Structure
 
