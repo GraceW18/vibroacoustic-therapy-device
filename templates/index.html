@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibroJaw | Wearable TMJ Monitoring & Therapy</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand"><span class="brand-icon">◈</span><span>VibroJaw</span></a>
+    <ul class="nav-links">
+      <li><a href="/"          class="nav-link active">Home</a></li>
+      <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
+      <li><a href="/about"     class="nav-link">About</a></li>
+      <li><a href="/api-docs"  class="nav-link">API</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">MedTech Hack 2025 · Health Monitoring Track · ChocoChip Circuits</div>
+    <h1 class="hero-headline">
+      Real-Time TMJ Monitoring<br>
+      <span class="hero-accent">&amp; Vibroacoustic Therapy</span>
+    </h1>
+    <p class="hero-body">
+      A wearable headband that detects jaw clenching via PVDF piezoelectric sensing
+      and delivers instant vibroacoustic biofeedback — giving TMJ disorder patients
+      longitudinal health data they've never had before, for under $30.
+    </p>
+    <div class="hero-cta">
+      <a href="/dashboard" class="btn-primary">Open Dashboard</a>
+      <a href="/about"     class="btn-outline">How It Works</a>
+    </div>
+    <div class="hero-stats-bar">
+      <div class="hero-stat">
+        <span class="hero-stat-num">10M+</span>
+        <span class="hero-stat-label">Americans with TMD</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-num">$29</span>
+        <span class="hero-stat-label">Total hardware BOM</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-num">&lt;80 ms</span>
+        <span class="hero-stat-label">Detection latency</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-num">Real-Time</span>
+        <span class="hero-stat-label">WebSocket dashboard</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section class="features-section">
+  <div class="section-container">
+    <h2 class="section-title">Why VibroJaw?</h2>
+    <p class="section-sub">Everything existing TMD solutions get wrong — solved in one wearable.</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feat-icon">⟁</div>
+        <h3>Detect</h3>
+        <p>PVDF piezoelectric film on the temporalis muscle captures clenching vibration signatures, filtered from noise via a rolling average on the ESP32.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">◎</div>
+        <h3>Respond</h3>
+        <p>On detection, vibration motors deliver a 50–100 Hz biofeedback pulse that interrupts the clenching reflex and relaxes the masseter musculature.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">⊞</div>
+        <h3>Track</h3>
+        <p>Every event is timestamped and transmitted via WiFi to a live dashboard — the first longitudinal clenching health record for TMD patients.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">⌖</div>
+        <h3>Adjust</h3>
+        <p>Detection thresholds and vibration parameters are configurable from the dashboard. Changes push to the ESP32 automatically within 10 seconds.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PIPELINE ── -->
+<section class="how-section">
+  <div class="section-container">
+    <h2 class="section-title">Signal Pipeline</h2>
+    <div class="pipeline">
+      <div class="pipe-step"><div class="pipe-num">01</div><div class="pipe-label">Piezo reads jaw vibration</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step"><div class="pipe-num">02</div><div class="pipe-label">ESP32 filters &amp; detects</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step"><div class="pipe-num">03</div><div class="pipe-label">Motor biofeedback fires</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step"><div class="pipe-num">04</div><div class="pipe-label">HTTP POST to server</div></div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step"><div class="pipe-num">05</div><div class="pipe-label">Socket.IO → dashboard</div></div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span>VibroJaw © 2025 — ChocoChip Circuits</span>
+    <span>MedTech Hack · Health Monitoring Track · Georgia Tech</span>
+  </div>
+</footer>
+
+</body>
+</html>

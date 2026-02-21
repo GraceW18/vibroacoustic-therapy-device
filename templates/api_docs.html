@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Docs | VibroJaw</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand"><span class="brand-icon">◈</span><span>VibroJaw</span></a>
+    <ul class="nav-links">
+      <li><a href="/"          class="nav-link">Home</a></li>
+      <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
+      <li><a href="/about"     class="nav-link">About</a></li>
+      <li><a href="/api-docs"  class="nav-link active">API</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div class="apidocs-wrap">
+  <div class="apidocs-hd">
+    <h1>REST API Reference</h1>
+    <p class="lead">All endpoints used by the ESP32 firmware and web dashboard. Click <strong>▶ Try It</strong> to send a live request and see the real server response.</p>
+  </div>
+
+  <div class="ep-list">
+
+    <!-- POST /api/event -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method post">POST</span>
+        <code class="ep-path">/api/event</code>
+        <span class="ep-desc">Single clench event (ESP32 → Server, real-time)</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Request Body</h4>
+          <pre class="code-block">{
+  "userId":           "esp32-001",
+  "intensity":        72.5,
+  "durationMs":       340,
+  "therapyTriggered": true
+}</pre>
+        </div>
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-event">—</pre>
+        </div>
+      </div>
+      <button class="try-btn" onclick="tryEvent()">▶ Try It</button>
+    </div>
+
+    <!-- POST /api/summary -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method post">POST</span>
+        <code class="ep-path">/api/summary</code>
+        <span class="ep-desc">5-second batch summary (ESP32 → Server)</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Request Body</h4>
+          <pre class="code-block">{
+  "userId":         "esp32-001",
+  "eventsInWindow": 3,
+  "avgIntensity":   65.2,
+  "windowMs":       5000
+}</pre>
+        </div>
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-summary">—</pre>
+        </div>
+      </div>
+      <button class="try-btn" onclick="trySummary()">▶ Try It</button>
+    </div>
+
+    <!-- GET /api/config -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method get">GET</span>
+        <code class="ep-path">/api/config?userId=esp32-001</code>
+        <span class="ep-desc">Fetch device config (ESP32 polls every 10 s)</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-config">—</pre>
+        </div>
+      </div>
+      <button class="try-btn" onclick="tryGetConfig()">▶ Try It</button>
+    </div>
+
+    <!-- GET /api/stats -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method get">GET</span>
+        <code class="ep-path">/api/stats?userId=esp32-001</code>
+        <span class="ep-desc">Session statistics for dashboard cards</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-stats">—</pre>
+        </div>
+      </div>
+      <button class="try-btn" onclick="tryStats()">▶ Try It</button>
+    </div>
+
+    <!-- PUT /api/config -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method put">PUT</span>
+        <code class="ep-path">/api/config</code>
+        <span class="ep-desc">Push updated config from dashboard to device</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Request Body</h4>
+          <pre class="code-block">{
+  "userId":             "esp32-001",
+  "threshold":          300,
+  "vibrationEnabled":   true,
+  "vibrationIntensity": 220,
+  "vibrationDuration":  500
+}</pre>
+        </div>
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-putconfig">—</pre>
+        </div>
+      </div>
+      <button class="try-btn" onclick="tryPutConfig()">▶ Try It</button>
+    </div>
+
+    <!-- DELETE /api/data -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method del">DELETE</span>
+        <code class="ep-path">/api/data?userId=esp32-001</code>
+        <span class="ep-desc">Clear all session data (demo reset)</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-delete">—</pre>
+        </div>
+      </div>
+      <button class="try-btn stop" onclick="tryDelete()">▶ Try It</button>
+    </div>
+
+    <!-- Simulator -->
+    <div class="ep-card">
+      <div class="ep-hd">
+        <span class="ep-method post">POST</span>
+        <code class="ep-path">/api/simulator/start</code>
+        <span class="ep-desc">Start demo simulator (generates live fake ESP32 data)</span>
+      </div>
+      <div class="ep-cols">
+        <div class="ep-col">
+          <label style="color:var(--text-dim);font-size:0.8rem;display:block;margin-bottom:0.4rem">Scenario</label>
+          <select id="apiScenario" class="scenario-select" style="width:auto">
+            <option>MILD</option>
+            <option selected>MODERATE</option>
+            <option>SEVERE</option>
+          </select>
+        </div>
+        <div class="ep-col">
+          <h4>Response</h4>
+          <pre class="code-block" id="res-sim">—</pre>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.6rem">
+        <button class="try-btn" onclick="tryStartSim()">▶ Start</button>
+        <button class="try-btn stop" onclick="tryStopSim()">■ Stop</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span>VibroJaw © 2025 — ChocoChip Circuits</span>
+    <span>MedTech Hack · Health Monitoring Track · Georgia Tech</span>
+  </div>
+</footer>
+
+<script>
+async function post(url, body) {
+  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  return r.json();
+}
+async function get(url)  { return (await fetch(url)).json(); }
+async function put(url, body) {
+  const r = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  return r.json();
+}
+async function del(url) {
+  const r = await fetch(url, { method:'DELETE' });
+  return r.json();
+}
+function show(id, data) { document.getElementById(id).textContent = JSON.stringify(data, null, 2); }
+
+async function tryEvent()     { show('res-event',     await post('/api/event',    { userId:'esp32-001', intensity:72.5, durationMs:340, therapyTriggered:true })); }
+async function trySummary()   { show('res-summary',   await post('/api/summary',  { userId:'esp32-001', eventsInWindow:3, avgIntensity:65.2, windowMs:5000 })); }
+async function tryGetConfig() { show('res-config',    await get('/api/config?userId=esp32-001')); }
+async function tryStats()     { show('res-stats',     await get('/api/stats?userId=esp32-001')); }
+async function tryPutConfig() { show('res-putconfig', await put('/api/config',    { userId:'esp32-001', threshold:300, vibrationEnabled:true, vibrationIntensity:220, vibrationDuration:500 })); }
+async function tryDelete()    { show('res-delete',    await del('/api/data?userId=esp32-001')); }
+async function tryStartSim()  { show('res-sim', await post('/api/simulator/start', { scenario: document.getElementById('apiScenario').value })); }
+async function tryStopSim()   { show('res-sim', await post('/api/simulator/stop', {})); }
+</script>
+
+</body>
+</html>

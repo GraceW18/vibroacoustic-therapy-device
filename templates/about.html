@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About | VibroJaw</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand"><span class="brand-icon">◈</span><span>VibroJaw</span></a>
+    <ul class="nav-links">
+      <li><a href="/"          class="nav-link">Home</a></li>
+      <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
+      <li><a href="/about"     class="nav-link active">About</a></li>
+      <li><a href="/api-docs"  class="nav-link">API</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div class="about-hero">
+  <h1>About VibroJaw</h1>
+  <p class="about-lead">Wearable vibroacoustic therapy and real-time monitoring for temporomandibular joint disorder — for under $30.</p>
+</div>
+
+<div class="about-body">
+
+  <div class="content-block">
+    <h2>The Problem</h2>
+    <p>Temporomandibular joint disorder (TMD) affects an estimated 10 million Americans — disproportionately women and young adults — causing chronic jaw pain, headaches, and restricted movement. Yet the monitoring tools available are either clinically locked or entirely absent from patients' lives between appointments.</p>
+    <p>Current management relies on passive solutions: expensive custom mouthguards ($200–$600), episodic Botox injections ($300–$500/session), or overnight polysomnography in a sleep lab ($1,000–$3,500). None produce the longitudinal, real-world clenching data that would actually help clinicians manage the condition.</p>
+  </div>
+
+  <div class="content-block">
+    <h2>Our Solution</h2>
+    <p>VibroJaw is a lightweight headband wearable with two simultaneous functions: it detects jaw clenching events in real time using a PVDF piezoelectric film sensor, and delivers targeted vibroacoustic biofeedback via vibration motors to interrupt the clenching reflex and relax the masseter and temporalis muscles.</p>
+    <p>Every event is timestamped and transmitted wirelessly to a Flask web server, then broadcast live to a monitoring dashboard via Socket.IO — creating the first accessible longitudinal clenching health record for TMD patients.</p>
+  </div>
+
+  <div class="content-block">
+    <h2>How It Works</h2>
+    <ul class="feat-list">
+      <li><strong>Detect:</strong> PVDF piezo film on the temporalis muscle reads jaw vibration at 200 Hz. A rolling-average filter removes electrical noise, and a state machine distinguishes valid clenches from brief artifacts using a configurable duration threshold.</li>
+      <li><strong>Respond:</strong> On a valid clench, the ESP32 fires a PWM-controlled vibration motor at 50–100 Hz. Intensity and duration are configurable from the web dashboard, pushed wirelessly to the device.</li>
+      <li><strong>Transmit:</strong> Each event is immediately POSTed to the Flask server via HTTP. A 5-second batch summary is also sent periodically for trend data, even during quiet periods.</li>
+      <li><strong>Display:</strong> The server broadcasts new data via Socket.IO to any connected browser. The chart and event log update live — no page refresh needed.</li>
+      <li><strong>Adapt:</strong> The ESP32 polls the server for config updates every 10 seconds. Threshold or vibration changes made on the dashboard apply to the device automatically — no reflashing required.</li>
+    </ul>
+  </div>
+
+  <div class="content-block">
+    <h2>Hardware (Total BOM: ~$29)</h2>
+    <ul class="feat-list">
+      <li><strong>ESP32 S3 DevKitC (~$5):</strong> Built-in WiFi and Bluetooth. Handles ADC sensing, rolling-average filter, state machine, motor PWM, HTTP, and config polling.</li>
+      <li><strong>PVDF Piezoelectric Film Sensor ($7.35):</strong> Flexible polymer sensor that generates voltage proportional to mechanical deformation. Validated in peer-reviewed bruxism detection literature for external temporalis placement.</li>
+      <li><strong>DC Vibration Motors — 10 pack ($5.99):</strong> 3V coin vibration motors, 12,000 RPM. Used for biofeedback delivery at therapeutic frequencies.</li>
+      <li><strong>Adjustable Strap ($4.99):</strong> Elastic headband for comfortable external placement over the temporalis muscle.</li>
+      <li><strong>I²C LCD Display ($5.99):</strong> 16×2 display shows live status, events-per-minute, and vibration state without requiring a phone or dashboard.</li>
+    </ul>
+  </div>
+
+  <div class="content-block">
+    <h2>Scientific Foundation</h2>
+    <ul class="feat-list">
+      <li>Calvo-Lobo et al. (2020, PMC) — Randomized double-blind placebo-controlled trial showing significant TMJ pain reduction using local vibration at 50–100 Hz on masseter and temporal muscles.</li>
+      <li>Journal of Prosthodontic Research (2023) — 14-week trial validating piezo-detected bruxism + vibration biofeedback — the same closed-loop architecture as VibroJaw, applied externally.</li>
+      <li>US Patent US10820853B2 (2020) — Validates temporalis muscle as optimal external sensor placement for clenching detection with minimal false positives from speech or facial movement.</li>
+      <li>PMC / Clinical and Experimental Dental Research (2024) — Systematic review identifying the precise gap in real-world external wearable bruxism monitoring that VibroJaw addresses.</li>
+    </ul>
+  </div>
+
+  <div class="content-block">
+    <h2>The Team</h2>
+    <p><strong>Team:</strong> ChocoChip Circuits &nbsp;|&nbsp; <strong>Institution:</strong> Georgia Tech &nbsp;|&nbsp; <strong>Event:</strong> MedTech Hack 2025 &nbsp;|&nbsp; <strong>Track:</strong> Health Monitoring</p>
+  </div>
+
+</div>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span>VibroJaw © 2025 — ChocoChip Circuits</span>
+    <span>MedTech Hack · Health Monitoring Track · Georgia Tech</span>
+  </div>
+</footer>
+
+</body>
+</html>

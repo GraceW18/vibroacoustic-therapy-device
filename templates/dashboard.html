@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | VibroJaw</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Socket.IO client (matches Flask-SocketIO) -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand"><span class="brand-icon">◈</span><span>VibroJaw</span></a>
+    <ul class="nav-links">
+      <li><a href="/"          class="nav-link">Home</a></li>
+      <li><a href="/dashboard" class="nav-link active">Dashboard</a></li>
+      <li><a href="/about"     class="nav-link">About</a></li>
+      <li><a href="/api-docs"  class="nav-link">API</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div class="dash-wrap">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="dash-header">
+    <div class="dash-title-group">
+      <h1 class="dash-title">Monitoring Dashboard</h1>
+      <div class="ws-pill">
+        <span class="ws-dot" id="wsDot"></span>
+        <span id="wsLabel">Connecting…</span>
+      </div>
+    </div>
+    <div class="dash-actions">
+      <span class="device-badge">Device: <strong>{{ userId }}</strong></span>
+      <button class="btn-danger" onclick="resetData()">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- ── 4-stat row ─────────────────────────────────────────── -->
+  <div class="stats-row">
+
+    <div class="stat-card" id="statusCard">
+      <div class="stat-label">Current Status</div>
+      <div class="stat-value" id="statusValue" style="font-size:1.6rem">—</div>
+      <div class="stat-sub"   id="statusSub">— events / min</div>
+    </div>
+
+    <div class="stat-card" id="cardTotal">
+      <div class="stat-label">Total Events</div>
+      <div class="stat-value" id="totalEvents">{{ sessionStats.totalEvents }}</div>
+      <div class="stat-sub">this session</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Avg Intensity</div>
+      <div class="stat-value" id="avgIntensity">
+        {{ sessionStats.avgIntensity }}<span class="stat-unit">%</span>
+      </div>
+      <div class="stat-sub">peak piezo signal</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Therapy Pulses</div>
+      <div class="stat-value" id="therapyCount">{{ sessionStats.therapyCount }}</div>
+      <div class="stat-sub">biofeedback triggers</div>
+    </div>
+
+  </div>
+
+  <!-- ── Chart + Config ─────────────────────────────────────── -->
+  <div class="dash-main">
+
+    <!-- Chart panel -->
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>Clench Activity — Live</h2>
+        <span>Events &amp; intensity per 5-second window</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Config + Simulator panel -->
+    <div class="panel">
+
+      <!-- Device config -->
+      <div class="panel-hd">
+        <h2>Device Config</h2>
+        <span>Pushed to ESP32 within 10 s</span>
+      </div>
+
+      <div class="cfg-form">
+
+        <div>
+          <div class="cfg-label">
+            Detection Threshold
+            <span class="cfg-hint">ADC 0–4095</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="thresholdSlider" min="100" max="2000" step="50"
+                   value="{{ config.threshold }}"
+                   oninput="updateThresholdDisplay(this.value)">
+            <span class="slider-val" id="thresholdVal">{{ config.threshold }}</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="cfg-label">Sensitivity Preset</div>
+          <div class="preset-row">
+            <button class="preset-btn" onclick="setPreset(200)">High</button>
+            <button class="preset-btn active" onclick="setPreset(400)">Medium</button>
+            <button class="preset-btn" onclick="setPreset(800)">Low</button>
+          </div>
+        </div>
+
+        <div class="toggle-row">
+          <span class="cfg-label" style="margin:0">Vibration Therapy</span>
+          <label class="toggle">
+            <input type="checkbox" id="vibEnabled"
+                   {% if config.vibrationEnabled %}checked{% endif %}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div>
+          <div class="cfg-label">
+            Vibration Intensity
+            <span class="cfg-hint">PWM 0–255</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="vibIntSlider" min="50" max="255" step="5"
+                   value="{{ config.vibrationIntensity }}"
+                   oninput="updateVibIntDisplay(this.value)">
+            <span class="slider-val" id="vibIntVal">{{ config.vibrationIntensity }}</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="cfg-label">
+            Vibration Duration
+            <span class="cfg-hint">ms per pulse</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="vibDurSlider" min="200" max="2000" step="100"
+                   value="{{ config.vibrationDuration }}"
+                   oninput="updateVibDurDisplay(this.value)">
+            <span class="slider-val" id="vibDurVal">{{ config.vibrationDuration }}</span>
+          </div>
+        </div>
+
+        <button class="btn-primary full-width" onclick="pushConfig()">
+          ↑ Push Config to Device
+        </button>
+        <div class="cfg-feedback" id="cfgFeedback"></div>
+      </div>
+
+      <!-- Simulator -->
+      <div class="sim-divider"></div>
+      <div class="sim-header">
+        <h3>Demo Simulator</h3>
+        <span class="sim-badge {% if simRunning %}on{% endif %}" id="simBadge">
+          {% if simRunning %}● {{ simScenario }}{% else %}○ STOPPED{% endif %}
+        </span>
+      </div>
+      <div class="sim-controls">
+        <select id="scenarioSelect" class="scenario-select">
+          <option value="MILD">Mild — low frequency</option>
+          <option value="MODERATE" selected>Moderate — typical</option>
+          <option value="SEVERE">Severe — high frequency</option>
+        </select>
+        <div class="sim-btns">
+          <button class="btn-primary" onclick="startSim()">▶ Start</button>
+          <button class="btn-ghost"   onclick="stopSim()">■ Stop</button>
+        </div>
+        <p class="sim-note">Simulates ESP32 data through the full pipeline — Socket.IO, chart, and event table all update live without any hardware.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Event log table ────────────────────────────────────── -->
+  <div class="panel table-panel">
+    <div class="panel-hd">
+      <h2>Event Log</h2>
+      <span id="eventCount">0 events recorded</span>
+    </div>
+    <div class="table-scroll">
+      <table class="event-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Intensity</th>
+            <th>Duration</th>
+            <th>Therapy</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="eventBody">
+          <tr class="empty-row">
+            <td colspan="5">No events yet — waiting for data…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /.dash-wrap -->
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span>VibroJaw © 2025 — ChocoChip Circuits</span>
+    <span>MedTech Hack · Health Monitoring Track · Georgia Tech</span>
+  </div>
+</footer>
+
+<script src="/static/js/dashboard.js"></script>
+<script>
+  initDashboard('{{ userId }}');
+</script>
+</body>
+</html>
