@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import threading
 import time
 import random
+import os
 
 # App setup
 app = Flask(__name__)
@@ -43,7 +44,7 @@ def default_config(user_id):
 # Health status updates
 def health_status(epm):
     """Events-per-minute → Calm / Elevated / Concerning"""
-    if epm < 3:  return "Calm"
+    if epm < 3:  return "Normal"
     if epm < 8:  return "Elevated"
     return "Concerning"
 

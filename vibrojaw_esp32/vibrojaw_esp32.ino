@@ -1,463 +1,335 @@
-// ============================================================
-//  VibroJaw — ESP32 S3 DevKitC Firmware
-//  Team: ChocoChip Circuits | MedTech Hack 2025
-// ============================================================
-//
-//  WIRING:
-//    Piezo film sensor  → GPIO 4  (ADC1_CH3, analog input)
-//    Vibration motor +  → GPIO 5  (PWM via LEDC channel 0)
-//    Vibration motor -  → GND
-//    LCD SDA            → GPIO 8
-//    LCD SCL            → GPIO 9
-//
-//  LIBRARIES REQUIRED (install via Arduino Library Manager):
-//    - WiFi            (built-in ESP32)
-//    - HTTPClient      (built-in ESP32)
-//    - ArduinoJson     (by Benoit Blanchon, v6.x)
-//    - LiquidCrystal_I2C (by Frank de Brabander)
-// ============================================================
+
 
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <ArduinoJson.h>
-#include <LiquidCrystal_I2C.h>
-#include "secrets.h"
 
-const char* ssid = SSID;
-const char* password = PASSWORD;
+// WiFi & Server
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "WIFI_PASSWORD";
+const char* SERVER   = "https://vibroacoustic-therapy-device-production.up.railway.app";
+const char* USER_ID  = "esp32-001";
 
-// Server address
-const char* SERVER_BASE   = "https://vibroacoustic-therapy-device-production.up.railway.app/";
+// Pins
+const int piezoPin     = 34;   // ADC input-only (was A0 on Uno)
+const int detectLEDPin = 2;    // onboard LED on most ESP32 DevKits
+const int motorPin     = 25;   // same transistor circuit, different pin number
 
-// Hardware pins
-const int  PIEZO_PIN      = 4;    // Analog input from piezo sensor
-const int  MOTOR_PIN      = 5;    // PWM output to vibration motor
-const int  LCD_ADDR       = 0x27; // I2C address (try 0x3F if this fails)
-const int  LCD_COLS       = 16;
-const int  LCD_ROWS       = 2;
+const bool SERIAL_DEBUG = true;
 
-// Sensing & detection parameters (tunable from dashboard)
-int        CLENCH_THRESHOLD    = 400;  // ADC units (0–4095). Higher = less sensitive
-int        MIN_CLENCH_MS       = 80;   // Ignore events shorter than this (noise filter)
-int        MAX_CLENCH_MS       = 3000; // Cap clench duration at this value
-int        POST_CLENCH_QUIET   = 300;  // ms of quiet required after clench ends
-bool       VIBRATION_ENABLED   = true; // Can be overridden from dashboard
-int        VIBRATION_INTENSITY = 200;  // PWM duty (0–255)
-int        VIBRATION_DURATION  = 600;  // ms to run motor per biofeedback pulse
+// Signal processing
+float filtered     = 0.0;
+float slowBaseline = 0.0;
+float prevFiltered = 0.0;
 
-// Sampling
-const int  SAMPLE_RATE_MS   = 5;     // Read sensor every 5ms (200Hz)
-const int  NOISE_WINDOW     = 8;     // Rolling average over this many samples
-const int  SUMMARY_INTERVAL = 5000;  // Send 5s summary batch every N ms
-const int  CONFIG_POLL_MS   = 10000; // Re-fetch config from server every 10s
+const float alphaFast = 0.20;
+const float alphaSlow = 0.01;
 
-// Rolling noise filter
-int sampleBuffer[8];
-int sampleIndex = 0;
+// Thresholds
+int threshold          = 120;
+int suddenSpikeDelta   = 24;   
+int artifactJump       = 720;  
+int maxDeformation     = 640;
 
-// State machine
-enum SensorState { IDLE, CLENCHING, POST_CLENCH_QUIET_PERIOD };
-SensorState sensorState = IDLE;
+bool VIB_ENABLED = true;  // updated by pollConfig
 
-unsigned long clenchStartMs  = 0;
-unsigned long clenchEndMs    = 0;
-int           peakIntensity  = 0;  // Peak ADC value during current clench
+// Timing / pattern
+unsigned long lastTriggerMs = 0;
+const unsigned long refractoryMs  = 900;
+unsigned long windowStartMs       = 0;
+const unsigned long spikeWindowMs = 280;
+int  spikeCountInWindow           = 0;
+const int maxSpikesForClench      = 2;
 
-// 5-second summary counters
-int summaryEventCount = 0;
-long summaryIntensitySum = 0;
-unsigned long lastSummaryMs = 0;
-unsigned long lastConfigPollMs = 0;
-unsigned long lastLcdUpdateMs = 0;
+// Motor
+bool          motorActive        = false;
+unsigned long motorEndMs         = 0;
+unsigned long motorLastToggleMs  = 0;
+bool          motorState         = false;
+unsigned int  motorHalfPeriodMs  = 10;
+unsigned long motorBurstDuration = 220;
 
-// Motor Control
-unsigned long motorStartMs = 0;
-bool motorRunning = false;
+// Data capture for HTTP POST
+// Filled in at moment of trigger, sent after motor burst ends
+float   pendingIntensity  = 0.0;
+int     pendingDurationMs = 0;
+bool    pendingEvent      = false;
 
-// Session stats (for LCD display)
-int   sessionEventCount = 0;
-float eventsPerMinute   = 0.0;
-String currentStatus    = "Calm";
+// 5-second summary window 
+unsigned long summaryWindowStart = 0;
+int           summaryEvents      = 0;
+float         summaryIntensity   = 0.0;
 
-// LCD
-LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS);
+// Config poll
+unsigned long lastPollMs = 0;
 
-// =============================================================
-//  SETUP
-// =============================================================
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n[VibroJaw] Starting up...");
+  delay(500);
 
-  // Motor pin
-  ledcAttach(MOTOR_PIN, 2000, 8);
-  ledcWrite(MOTOR_PIN, 0);
+  pinMode(detectLEDPin, OUTPUT);
+  pinMode(motorPin, OUTPUT);
+  digitalWrite(detectLEDPin, LOW);
+  digitalWrite(motorPin, LOW);
 
-  // Initialize rolling average buffer
-  for (int i = 0; i < NOISE_WINDOW; i++) sampleBuffer[i] = 0;
+  // ESP32 ADC is 12-bit by default, but set explicitly to be safe
+  analogReadResolution(12);
 
-  // LCD
-  lcd.init();
-  lcd.backlight();
-  lcdShowStartup();
+  calibrateBaseline();
 
-  // WiFi
-  connectWiFi();
+  // Connect WiFi
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500); Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected! IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Sending data to: ");
+  Serial.println(String(SERVER) + "/api/event");
 
-  lastSummaryMs    = millis();
-  lastConfigPollMs = millis();
-  lastLcdUpdateMs  = millis();
-
-  Serial.println("[VibroJaw] Ready. Monitoring started.");
+  windowStartMs        = millis();
+  summaryWindowStart   = millis();
+  lastPollMs           = millis();
 }
 
-// =============================================================
-//  MAIN LOOP
-// =============================================================
 void loop() {
   unsigned long now = millis();
 
-  // 1. Read and filter sensor
-  int rawValue = analogRead(PIEZO_PIN);
-  int smoothed = updateRollingAverage(rawValue);
+  int raw = analogRead(piezoPin);
 
-  // 2. Run state machine
-  runStateMachine(smoothed, now);
-  checkMotorStop();
+  // Signal processing (IDENTICAL to Uno version)
+  prevFiltered = filtered;
+  filtered = alphaFast * raw + (1.0 - alphaFast) * filtered;
 
-  // 3. Send 5-second summary
-  if (now - lastSummaryMs >= SUMMARY_INTERVAL) {
-    sendSummary(now);
-    lastSummaryMs = now;
+  // Slow baseline — only tracks when motor is off and near rest
+  int nearRest = abs((int)(filtered - slowBaseline));
+  if (!motorActive && nearRest < threshold) {
+    slowBaseline = alphaSlow * filtered + (1.0 - alphaSlow) * slowBaseline;
   }
 
-  // 4. Poll config from server
-  if (now - lastConfigPollMs >= CONFIG_POLL_MS) {
-    fetchConfig();
-    lastConfigPollMs = now;
+  int deviation = abs((int)(filtered - slowBaseline));
+  int delta     = (int)(filtered - prevFiltered);
+  int absDelta  = abs(delta);
+
+  bool artifact       = (absDelta > artifactJump);
+  bool candidateSpike = (!artifact && deviation > threshold && absDelta >= suddenSpikeDelta);
+
+  // Spike window (rejects repetitive chewing/open-close motion)
+  if (now - windowStartMs > spikeWindowMs) {
+    windowStartMs      = now;
+    spikeCountInWindow = 0;
+  }
+  if (candidateSpike) spikeCountInWindow++;
+
+  bool likelyContinuousMotion = (spikeCountInWindow > maxSpikesForClench);
+
+  digitalWrite(detectLEDPin, (deviation > threshold) ? HIGH : LOW);
+
+  // Trigger (IDENTICAL logic)
+  bool cooldownDone = (now - lastTriggerMs > refractoryMs);
+
+  if (candidateSpike && cooldownDone && !likelyContinuousMotion) {
+
+    // Capture data before starting the motor burst
+    // Intensity: map deviation to 0–100%
+    float intensity = ((float)(deviation - threshold) /
+                       (float)(maxDeformation  - threshold)) * 100.0f;
+    if (intensity < 0)   intensity = 0;
+    if (intensity > 100) intensity = 100;
+
+    startMotorBurst(deviation);   // sets motorBurstDuration for this hit
+
+    // Store for HTTP POST (sent after burst so POST doesn't block motor timing)
+    pendingIntensity  = intensity;
+    pendingDurationMs = (int)motorBurstDuration;
+    pendingEvent      = true;
+
+    lastTriggerMs = now;
+
+    if (SERIAL_DEBUG) {
+      Serial.printf("[CLENCH] deviation=%d intensity=%.1f%% duration=%lums\n",
+                    deviation, intensity, motorBurstDuration);
+    }
   }
 
-  // 5. Refresh LCD every 500ms
-  if (now - lastLcdUpdateMs >= 500) {
-    updateLcd();
-    lastLcdUpdateMs = now;
+  updateMotor(now);
+
+  // Send pending event AFTER motor burst finishes
+  // This avoids the HTTP POST blocking the motor toggle loop.
+  if (pendingEvent && !motorActive) {
+    postEvent(pendingIntensity, pendingDurationMs, true);
+    summaryEvents++;
+    summaryIntensity += pendingIntensity;
+    pendingEvent = false;
   }
 
-  delay(SAMPLE_RATE_MS);
-}
+  // 5-second summary POST
+  if (now - summaryWindowStart >= 5000) {
+    float avgI = summaryEvents > 0 ? (summaryIntensity / summaryEvents) : 0.0f;
+    postSummary(summaryEvents, avgI, 5000);
 
-// =============================================================
-//  ROLLING AVERAGE NOISE FILTER
-//  Smooths out electrical noise from piezo by averaging
-//  the last NOISE_WINDOW readings.
-// =============================================================
-int updateRollingAverage(int newSample) {
-  sampleBuffer[sampleIndex] = newSample;
-  sampleIndex = (sampleIndex + 1) % NOISE_WINDOW;
-
-  long sum = 0;
-  for (int i = 0; i < NOISE_WINDOW; i++) sum += sampleBuffer[i];
-  return (int)(sum / NOISE_WINDOW);
-}
-
-// =============================================================
-//  CLENCH DETECTION STATE MACHINE
-//
-//  IDLE          → signal rises above CLENCH_THRESHOLD → CLENCHING
-//  CLENCHING     → signal drops below threshold AND duration ≥ MIN_CLENCH_MS → event recorded → POST_CLENCH_QUIET_PERIOD
-//  CLENCHING     → signal drops below threshold AND duration < MIN_CLENCH_MS → IDLE (noise, ignored)
-//  POST_CLENCH   → after POST_CLENCH_QUIET ms → IDLE
-// =============================================================
-void runStateMachine(int value, unsigned long now) {
-  switch (sensorState) {
-
-    case IDLE:
-      if (value >= CLENCH_THRESHOLD) {
-        // Clench onset detected
-        sensorState    = CLENCHING;
-        clenchStartMs  = now;
-        peakIntensity  = value;
-        Serial.printf("[VibroJaw] Clench START — ADC: %d\n", value);
-      }
-      break;
-
-    case CLENCHING:
-      // Track peak intensity during clench
-      if (value > peakIntensity) peakIntensity = value;
-
-      if (value < CLENCH_THRESHOLD) {
-        // Clench ended
-        unsigned long durationMs = now - clenchStartMs;
-
-        if (durationMs >= MIN_CLENCH_MS) {
-          // Valid clench event — record and transmit
-          int durationCapped = min((unsigned long)MAX_CLENCH_MS, durationMs);
-          float normalizedIntensity = (float)peakIntensity / 4095.0 * 100.0;
-
-          Serial.printf("[VibroJaw] Clench END — Duration: %lums, Peak ADC: %d, Intensity: %.1f%%\n",
-                        durationMs, peakIntensity, normalizedIntensity);
-
-          sessionEventCount++;
-          summaryEventCount++;
-          summaryIntensitySum += (long)normalizedIntensity;
-
-          // Trigger vibration biofeedback
-          if (VIBRATION_ENABLED) {
-            triggerVibration();
-          }
-
-          // POST event to server
-          postClenchEvent(normalizedIntensity, durationCapped);
-
-          clenchEndMs = now;
-          sensorState = POST_CLENCH_QUIET_PERIOD;
-        } else {
-          // Too short — noise, ignore
-          Serial.printf("[VibroJaw] Noise filtered — duration %lums < %dms minimum\n",
-                        durationMs, MIN_CLENCH_MS);
-          sensorState = IDLE;
-        }
-      }
-      break;
-
-    case POST_CLENCH_QUIET_PERIOD:
-      // Stay quiet to avoid double-triggering
-      if (now - clenchEndMs >= POST_CLENCH_QUIET) {
-        sensorState = IDLE;
-      }
-      break;
+    summaryEvents    = 0;
+    summaryIntensity = 0.0;
+    summaryWindowStart = now;
   }
-}
 
-// =============================================================
-//  VIBRATION BIOFEEDBACK
-//  Runs motor at VIBRATION_INTENSITY PWM for VIBRATION_DURATION ms.
-//  Non-blocking via a simple timestamp approach.
-// =============================================================
-
-void triggerVibration() {
-  ledcWrite(MOTOR_PIN, VIBRATION_INTENSITY);
-  motorStartMs = millis();
-  motorRunning = true;
-  Serial.printf("[VibroJaw] Vibration triggered — PWM: %d, Duration: %dms\n",
-                VIBRATION_INTENSITY, VIBRATION_DURATION);
-}
-
-// Call this from loop() to stop motor after duration — already handled via delay-free check
-void checkMotorStop() {
-  if (motorRunning && (millis() - motorStartMs >= (unsigned long)VIBRATION_DURATION)) {
-    ledcWrite(MOTOR_PIN, 0);
-    motorRunning = false;
-    Serial.println("[VibroJaw] Vibration OFF");
+  // Config poll every 10s
+  if (now - lastPollMs >= 10000) {
+    pollConfig();
+    lastPollMs = now;
   }
+
+  // Serial debug
+  if (SERIAL_DEBUG) {
+    static unsigned long lastPrint = 0;
+    if (now - lastPrint > 50) {
+      lastPrint = now;
+      Serial.printf("raw=%d filt=%d base=%d dev=%d d=%d spikes=%d motor=%d\n",
+                    raw, (int)filtered, (int)slowBaseline,
+                    deviation, delta, spikeCountInWindow, motorActive ? 1 : 0);
+    }
+  }
+
+  delay(5);
 }
 
-// =============================================================
-//  HTTP: POST single clench event
-//  Endpoint: POST /api/event
-//  Body: { "userId": "esp32-001", "intensity": 72.5,
-//          "durationMs": 340, "therapyTriggered": true }
-// =============================================================
-void postClenchEvent(float intensity, int durationMs) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[VibroJaw] WiFi disconnected — skipping event POST");
-    reconnectWiFi();
+// Motor functions
+
+void startMotorBurst(int deviation) {
+  int d = deviation;
+  if (d < threshold)     d = threshold;
+  if (d > maxDeformation) d = maxDeformation;
+
+  int freqHz = map(d, threshold, maxDeformation, 35, 110);
+  if (freqHz < 1) freqHz = 1;
+
+  motorHalfPeriodMs  = 500UL / (unsigned long)freqHz;
+  if (motorHalfPeriodMs < 1) motorHalfPeriodMs = 1;
+
+  motorBurstDuration = map(d, threshold, maxDeformation, 140, 320);
+
+  motorActive       = true;
+  motorEndMs        = millis() + motorBurstDuration;
+  motorLastToggleMs = 0;
+  motorState        = false;
+  digitalWrite(motorPin, LOW);
+}
+
+void updateMotor(unsigned long now) {
+  if (!motorActive) return;
+
+  if (now >= motorEndMs) {
+    motorActive = false;
+    motorState  = false;
+    digitalWrite(motorPin, LOW);
     return;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  String url = String(SERVER_BASE) + "/api/event";
-  http.begin(client, url);
-  http.addHeader("Content-Type", "application/json");
-
-  // Build JSON payload
-  StaticJsonDocument<200> doc;
-  doc["userId"]           = "esp32-001";
-  doc["intensity"]        = intensity;
-  doc["durationMs"]       = durationMs;
-  doc["therapyTriggered"] = VIBRATION_ENABLED;
-
-  String body;
-  serializeJson(doc, body);
-
-  int code = http.POST(body);
-  Serial.printf("[VibroJaw] Event POST %s (HTTP %d)\n",
-                (code == 200 || code == 201) ? "OK" : "FAILED", code);
-  http.end();
+  if (motorLastToggleMs == 0 || (now - motorLastToggleMs >= motorHalfPeriodMs)) {
+    motorLastToggleMs = now;
+    motorState        = !motorState;
+    digitalWrite(motorPin, motorState ? HIGH : LOW);
+  }
 }
 
-// =============================================================
-//  HTTP: POST 5-second summary
-//  Endpoint: POST /api/summary
-//  Body: { "userId": "esp32-001", "eventsInWindow": 3,
-//          "avgIntensity": 65.2, "windowMs": 5000 }
-// =============================================================
-void sendSummary(unsigned long now) {
-  float avgIntensity = (summaryEventCount > 0)
-                       ? (float)summaryIntensitySum / summaryEventCount
-                       : 0.0;
+//  Calibration
 
-  // Compute events-per-minute for status display
-  eventsPerMinute = (float)summaryEventCount * 12.0; // 12 × 5s = 1 min
+void calibrateBaseline() {
+  long sum = 0;
+  const int samples = 250;
 
-  Serial.printf("[VibroJaw] Summary — Events: %d, AvgIntensity: %.1f%%, EPM: %.1f\n",
-                summaryEventCount, avgIntensity, eventsPerMinute);
+  if (SERIAL_DEBUG) Serial.println("Calibrating baseline — keep jaw relaxed...");
 
-  if (WiFi.status() == WL_CONNECTED) {
-    WiFiClientSecure client;
-    client.setInsecure();
-
-    HTTPClient http;
-    String url = String(SERVER_BASE) + "/api/summary";
-    http.begin(client, url);
-    http.addHeader("Content-Type", "application/json");
-
-    StaticJsonDocument<200> doc;
-    doc["userId"]         = "esp32-001";
-    doc["eventsInWindow"] = summaryEventCount;
-    doc["avgIntensity"]   = avgIntensity;
-    doc["windowMs"]       = SUMMARY_INTERVAL;
-
-    String body;
-    serializeJson(doc, body);
-
-    int responseCode = http.POST(body);
-    Serial.printf("[VibroJaw] Summary POST %s (%d)\n",
-                  (responseCode > 0 ? "OK" : "FAILED"), responseCode);
-    http.end();
+  for (int i = 0; i < samples; i++) {
+    sum += analogRead(piezoPin);
+    delay(4);
   }
 
-  // Reset counters
-  summaryEventCount   = 0;
-  summaryIntensitySum = 0;
+  float baseline = (float)(sum / samples);
+  filtered       = baseline;
+  prevFiltered   = baseline;
+  slowBaseline   = baseline;
+
+  if (SERIAL_DEBUG) {
+    Serial.printf("Baseline = %.1f (out of 4095)\n", baseline);
+  }
 }
 
-// =============================================================
-//  HTTP: GET config from server
-//  Endpoint: GET /api/config?userId=esp32-001
-//  Response: { "threshold": 400, "vibrationEnabled": true,
-//              "vibrationIntensity": 200, "vibrationDuration": 600 }
-// =============================================================
-void fetchConfig() {
+//  HTTP functions
+
+void postEvent(float intensity, int durationMs, bool therapy) {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  HTTPClient http;
+  http.begin(String(SERVER) + "/api/event");
+  http.addHeader("Content-Type", "application/json");
+
+  String body = String("{")
+    + "\"userId\":\""         + USER_ID              + "\","
+    + "\"intensity\":"        + String(intensity, 1)  + ","
+    + "\"durationMs\":"       + String(durationMs)    + ","
+    + "\"therapyTriggered\":" + (therapy ? "true" : "false")
+    + "}";
+
+  int code = http.POST(body);
+  if (SERIAL_DEBUG) Serial.printf("[HTTP] POST /api/event → %d\n", code);
+  http.end();
+}
+
+void postSummary(int events, float avgIntensity, int windowMs) {
+  if (WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
-  String url = String(SERVER_BASE) + "/api/config?userId=esp32-001";
-  http.begin(client, url);
+  http.begin(String(SERVER) + "/api/summary");
+  http.addHeader("Content-Type", "application/json");
 
-  int responseCode = http.GET();
+  String body = String("{")
+    + "\"userId\":\""       + USER_ID                 + "\","
+    + "\"eventsInWindow\":" + String(events)           + ","
+    + "\"avgIntensity\":"   + String(avgIntensity, 1)  + ","
+    + "\"windowMs\":"       + String(windowMs)
+    + "}";
 
-  if (responseCode == 200) {
-    String payload = http.getString();
+  int code = http.POST(body);
+  if (SERIAL_DEBUG) Serial.printf("[HTTP] POST /api/summary → %d (events=%d avg=%.1f%%)\n",
+                                   code, events, avgIntensity);
+  http.end();
+}
 
-    StaticJsonDocument<200> doc;
-    DeserializationError err = deserializeJson(doc, payload);
+void pollConfig() {
+  if (WiFi.status() != WL_CONNECTED) return;
 
-    if (!err) {
-      CLENCH_THRESHOLD    = doc["threshold"]          | CLENCH_THRESHOLD;
-      VIBRATION_ENABLED   = doc["vibrationEnabled"]   | VIBRATION_ENABLED;
-      VIBRATION_INTENSITY = doc["vibrationIntensity"] | VIBRATION_INTENSITY;
-      VIBRATION_DURATION  = doc["vibrationDuration"]  | VIBRATION_DURATION;
+  HTTPClient http;
+  http.begin(String(SERVER) + "/api/config?userId=" + String(USER_ID));
+  int code = http.GET();
 
-      Serial.printf("[VibroJaw] Config updated — Threshold: %d, Vib: %s\n",
-                    CLENCH_THRESHOLD,
-                    VIBRATION_ENABLED ? "ON" : "OFF",
-                    VIBRATION_INTENSITY,
-                    VIBRATION_DURATION);
-    } else {
-      Serial.println("[VibroJaw] Config JSON parse error");
-    }
-  } else {
-    Serial.printf("[VibroJaw] Config fetch failed - HTTP %d\n", responseCode);
+  if (code == 200) {
+    String p = http.getString();
+    // Pull threshold back and un-scale to ESP32 ADC range (stored as Uno values in Flask)
+    int t = extractInt(p, "threshold", threshold);
+    // If the value coming back looks like Uno range (< 500), scale it up
+    threshold       = (t < 500) ? t * 4 : t;
+    VIB_ENABLED     = extractBool(p, "vibrationEnabled", true);
+    if (SERIAL_DEBUG) Serial.printf("[CONFIG] threshold=%d\n", threshold);
   }
   http.end();
 }
 
-// =============================================================
-//  LCD DISPLAY
-// =============================================================
-void lcdShowStartup() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("  VibroJaw v1.0");
-  lcd.setCursor(0, 1);
-  lcd.print(" Initializing...");
-  delay(1500);
+int extractInt(String json, String key, int fallback) {
+  String search = "\"" + key + "\":";
+  int i = json.indexOf(search);
+  if (i == -1) return fallback;
+  int start = i + search.length();
+  int end   = json.indexOf(",", start);
+  if (end == -1) end = json.indexOf("}", start);
+  return (end == -1) ? fallback : json.substring(start, end).toInt();
 }
 
-void updateLcd() {
-  // Determine status from events per minute
-  if (eventsPerMinute < 3)       currentStatus = "Calm    ";
-  else if (eventsPerMinute < 8)  currentStatus = "Elevated";
-  else                           currentStatus = "Concern!";
-
-  lcd.clear();
-  // Row 0: Status + events per minute
-  lcd.setCursor(0, 0);
-  lcd.print(currentStatus);
-  lcd.setCursor(9, 0);
-  char epmbuf[7];
-  snprintf(epmbuf, sizeof(epmbuf), "%4.1f/m", eventsPerMinute);
-  lcd.print(epmbuf);
-
-  // Row 1: Total session events + vibration state
-  lcd.setCursor(0, 1);
-  char buf[17];
-  snprintf(buf, sizeof(buf), "Tot:%-4d Vib:%s",
-           sessionEventCount,
-           VIBRATION_ENABLED ? "ON " : "OFF");
-  lcd.print(buf);
-}
-
-// =============================================================
-//  WIFI HELPERS
-// =============================================================
-void connectWiFi() {
-  Serial.printf("[VibroJaw] Connecting to WiFi: %s\n", ssid);
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Connecting WiFi");
-
-  WiFi.begin(ssid, password);
-
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n[VibroJaw] WiFi connected. IP: %s\n",
-                  WiFi.localIP().toString().c_str());
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi Connected!");
-    lcd.setCursor(0, 1);
-    lcd.print(WiFi.localIP().toString());
-    delay(1500);
-  } else {
-    Serial.println("\n[VibroJaw] WiFi FAILED — running offline");
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi FAILED");
-    lcd.setCursor(0, 1);
-    lcd.print("Offline mode");
-    delay(1500);
-  }
-}
-
-void reconnectWiFi() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[VibroJaw] Attempting WiFi reconnect...");
-    WiFi.reconnect();
-    delay(2000);
-  }
+bool extractBool(String json, String key, bool fallback) {
+  String search = "\"" + key + "\":";
+  int i = json.indexOf(search);
+  if (i == -1) return fallback;
+  return json.substring(i + search.length(), i + search.length() + 4) == "true";
 }

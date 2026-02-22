@@ -376,7 +376,7 @@ function refreshCountLabel() {
 }
 
 function intensityStatus(i) {
-  if (i < 40) return 'Calm';
+  if (i < 40) return 'Normal';
   if (i < 70) return 'Elevated';
   return 'Concerning';
 }
