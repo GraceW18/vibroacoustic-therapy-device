@@ -10,7 +10,7 @@ const char* SERVER   = "https://vibroacoustic-therapy-device-production.up.railw
 const char* USER_ID  = "esp32-001";
 
 // Pins
-const int piezoPin     = 34;   // ADC input-only (was A0 on Uno)
+const int piezoPin     = 6;   // ADC input-only (was A0 on Uno)
 const int detectLEDPin = 2;    // onboard LED on most ESP32 DevKits
 const int motorPin     = 25;   // same transistor circuit, different pin number
 
@@ -26,8 +26,8 @@ const float alphaSlow = 0.01;
 
 // Thresholds
 int threshold          = 120;
-int suddenSpikeDelta   = 24;   
-int artifactJump       = 720;  
+int suddenSpikeDelta   = 4;
+int artifactJump       = 299;
 int maxDeformation     = 640;
 
 bool VIB_ENABLED = true;  // updated by pollConfig
@@ -54,13 +54,17 @@ float   pendingIntensity  = 0.0;
 int     pendingDurationMs = 0;
 bool    pendingEvent      = false;
 
-// 5-second summary window 
+// 5-second summary window
 unsigned long summaryWindowStart = 0;
 int           summaryEvents      = 0;
 float         summaryIntensity   = 0.0;
 
 // Config poll
 unsigned long lastPollMs = 0;
+
+// Signal Processing Hard Coded
+int count = 0;
+int rawCollection[5] = {0};
 
 void setup() {
   Serial.begin(115200);
@@ -96,103 +100,111 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
+  if (count == 5) {
+    int rawSum = 0;
+    for(int i = 0; i <= 4; i++){
+      rawSum += rawCollection[i];
+    }
+    int raw = 300 - rawSum / 5;
 
-  int raw = analogRead(piezoPin);
+    // Signal processing
+    prevFiltered = filtered;
+    filtered = alphaFast * raw + (1.0 - alphaFast) * filtered;
 
-  // Signal processing (IDENTICAL to Uno version)
-  prevFiltered = filtered;
-  filtered = alphaFast * raw + (1.0 - alphaFast) * filtered;
+    // Slow baseline — only tracks when motor is off and near rest
+    int nearRest = abs((int)(filtered - slowBaseline));
+    if (!motorActive && nearRest < threshold) {
+      slowBaseline = alphaSlow * filtered + (1.0 - alphaSlow) * slowBaseline;
+    }
 
-  // Slow baseline — only tracks when motor is off and near rest
-  int nearRest = abs((int)(filtered - slowBaseline));
-  if (!motorActive && nearRest < threshold) {
-    slowBaseline = alphaSlow * filtered + (1.0 - alphaSlow) * slowBaseline;
-  }
+    int deviation = abs((int)(filtered - slowBaseline));
+    int delta     = (int)(filtered - prevFiltered);
+    int absDelta  = abs(delta);
+    // Serial.println(absDelta);
 
-  int deviation = abs((int)(filtered - slowBaseline));
-  int delta     = (int)(filtered - prevFiltered);
-  int absDelta  = abs(delta);
+    bool artifact       = (absDelta > artifactJump);
+    // bool candidateSpike = (!artifact && deviation > threshold && absDelta >= suddenSpikeDelta);
+    bool candidateSpike = (filtered > artifactJump);
+    // Spike window (rejects repetitive chewing/open-close motion)
+    if (now - windowStartMs > spikeWindowMs) {
+      windowStartMs      = now;
+      spikeCountInWindow = 0;
+    }
+    if (candidateSpike) spikeCountInWindow++;
 
-  bool artifact       = (absDelta > artifactJump);
-  bool candidateSpike = (!artifact && deviation > threshold && absDelta >= suddenSpikeDelta);
+    bool likelyContinuousMotion = (spikeCountInWindow > maxSpikesForClench);
 
-  // Spike window (rejects repetitive chewing/open-close motion)
-  if (now - windowStartMs > spikeWindowMs) {
-    windowStartMs      = now;
-    spikeCountInWindow = 0;
-  }
-  if (candidateSpike) spikeCountInWindow++;
+    digitalWrite(detectLEDPin, (deviation > threshold) ? HIGH : LOW);
 
-  bool likelyContinuousMotion = (spikeCountInWindow > maxSpikesForClench);
+    // Trigger
+    bool cooldownDone = (now - lastTriggerMs > refractoryMs);
+    if (candidateSpike && cooldownDone && !likelyContinuousMotion) {
+      // Capture data before starting the motor burst
+      // Intensity: map deviation to 0–100%
+      float intensity = ((float)(deviation - threshold) /
+                        (float)(maxDeformation  - threshold)) * 100.0f;
+      if (intensity < 0)   intensity = 0;
+      if (intensity > 100) intensity = 100;
 
-  digitalWrite(detectLEDPin, (deviation > threshold) ? HIGH : LOW);
+      startMotorBurst(deviation);   // sets motorBurstDuration for this hit
 
-  // Trigger (IDENTICAL logic)
-  bool cooldownDone = (now - lastTriggerMs > refractoryMs);
+      // Store for HTTP POST (sent after burst so POST doesn't block motor timing)
+      pendingIntensity  = intensity;
+      pendingDurationMs = (int)motorBurstDuration;
+      pendingEvent      = true;
 
-  if (candidateSpike && cooldownDone && !likelyContinuousMotion) {
+      lastTriggerMs = now;
 
-    // Capture data before starting the motor burst
-    // Intensity: map deviation to 0–100%
-    float intensity = ((float)(deviation - threshold) /
-                       (float)(maxDeformation  - threshold)) * 100.0f;
-    if (intensity < 0)   intensity = 0;
-    if (intensity > 100) intensity = 100;
+      if (SERIAL_DEBUG) {
+        Serial.printf("[CLENCH] deviation=%d intensity=%.1f%% duration=%lums\n",
+                      deviation, intensity, motorBurstDuration);
+      }
+    }
 
-    startMotorBurst(deviation);   // sets motorBurstDuration for this hit
+    updateMotor(now);
 
-    // Store for HTTP POST (sent after burst so POST doesn't block motor timing)
-    pendingIntensity  = intensity;
-    pendingDurationMs = (int)motorBurstDuration;
-    pendingEvent      = true;
+    // Send pending event AFTER motor burst finishes
+    // This avoids the HTTP POST blocking the motor toggle loop.
+    if (pendingEvent && !motorActive) {
+      postEvent(pendingIntensity, pendingDurationMs, true);
+      summaryEvents++;
+      summaryIntensity += pendingIntensity;
+      pendingEvent = false;
+    }
 
-    lastTriggerMs = now;
+    // 5-second summary POST
+    if (now - summaryWindowStart >= 5000) {
+      float avgI = summaryEvents > 0 ? (summaryIntensity / summaryEvents) : 0.0f;
+      postSummary(summaryEvents, avgI, 5000);
 
+      summaryEvents    = 0;
+      summaryIntensity = 0.0;
+      summaryWindowStart = now;
+    }
+
+    // Config poll every 10s
+    if (now - lastPollMs >= 10000) {
+      pollConfig();
+      lastPollMs = now;
+    }
+
+    // Serial debug
     if (SERIAL_DEBUG) {
-      Serial.printf("[CLENCH] deviation=%d intensity=%.1f%% duration=%lums\n",
-                    deviation, intensity, motorBurstDuration);
+      static unsigned long lastPrint = 0;
+      if (now - lastPrint > 50) {
+        lastPrint = now;
+        Serial.printf("raw=%d filt=%d base=%d dev=%d d=%d spikes=%d motor=%d\n",
+                      raw, (int)filtered, (int)slowBaseline,
+                      deviation, delta, spikeCountInWindow, motorActive ? 1 : 0);
+      }
     }
+    delay(5);
+    count = 0;
+  } else {
+    rawCollection[count] = analogRead(piezoPin);
+    count += 1;
+    delay(5);
   }
-
-  updateMotor(now);
-
-  // Send pending event AFTER motor burst finishes
-  // This avoids the HTTP POST blocking the motor toggle loop.
-  if (pendingEvent && !motorActive) {
-    postEvent(pendingIntensity, pendingDurationMs, true);
-    summaryEvents++;
-    summaryIntensity += pendingIntensity;
-    pendingEvent = false;
-  }
-
-  // 5-second summary POST
-  if (now - summaryWindowStart >= 5000) {
-    float avgI = summaryEvents > 0 ? (summaryIntensity / summaryEvents) : 0.0f;
-    postSummary(summaryEvents, avgI, 5000);
-
-    summaryEvents    = 0;
-    summaryIntensity = 0.0;
-    summaryWindowStart = now;
-  }
-
-  // Config poll every 10s
-  if (now - lastPollMs >= 10000) {
-    pollConfig();
-    lastPollMs = now;
-  }
-
-  // Serial debug
-  if (SERIAL_DEBUG) {
-    static unsigned long lastPrint = 0;
-    if (now - lastPrint > 50) {
-      lastPrint = now;
-      Serial.printf("raw=%d filt=%d base=%d dev=%d d=%d spikes=%d motor=%d\n",
-                    raw, (int)filtered, (int)slowBaseline,
-                    deviation, delta, spikeCountInWindow, motorActive ? 1 : 0);
-    }
-  }
-
-  delay(5);
 }
 
 // Motor functions
@@ -235,7 +247,6 @@ void updateMotor(unsigned long now) {
 }
 
 //  Calibration
-
 void calibrateBaseline() {
   long sum = 0;
   const int samples = 250;
@@ -258,7 +269,6 @@ void calibrateBaseline() {
 }
 
 //  HTTP functions
-
 void postEvent(float intensity, int durationMs, bool therapy) {
   if (WiFi.status() != WL_CONNECTED) return;
 
